@@ -272,7 +272,7 @@ Returns true if the box is completely outside the frustum
 */
 qboolean R_CullBox (vec3_t emins, vec3_t emaxs)
 {
-/*	int i;
+	/*int i;
 	mplane_t *p;
 	for (i = 0;i < 4;i++)
 	{
@@ -499,30 +499,12 @@ void R_SetupGL (qboolean bLeft)
 
     GL_SetFrustum (r_fovx, r_fovy); //johnfitz -- use r_fov* vars
 
-		//const float temp = r_fovy;
-
-//		float fuck;
-	//	ohmd_device_getf(g_hmdDevice, OHMD_PROJECTION_ZFAR, &fuck);
-//		Sys_Printf("FUCK: %f %f ", fuck, r_fovx);
-
-	//	ohmd_device_setf(g_hmdDevice, OHMD_LEFT_EYE_FOV, &r_fovy);
-float temp = NEARCLIP;
-		ohmd_device_setf(g_hmdDevice, OHMD_PROJECTION_ZNEAR, &temp);
-		ohmd_device_setf(g_hmdDevice, OHMD_PROJECTION_ZFAR, &gl_farclip.value);
-	//	ohmd_device_setf(g_hmdDevice, OHMD_LEFT_EYE_ASPECT_RATIO, )
-
-		    float projm[16];
-    ohmd_device_getf(g_hmdDevice, bLeft? OHMD_LEFT_EYE_GL_PROJECTION_MATRIX:
-		OHMD_RIGHT_EYE_GL_PROJECTION_MATRIX, projm);
-
-		
-
-	//	glLoadMatrixf(projm);
-
 //	glCullFace(GL_BACK); //johnfitz -- glquake used CCW with backwards culling -- let's do it right
 
 	glMatrixMode(GL_MODELVIEW);
     glLoadIdentity ();
+
+//		Con_Printf ("Quake %f %f %f\n", r_refdef.viewangles[0], r_refdef.viewangles[1], r_refdef.viewangles[2]);
 
     glRotatef (-90,  1, 0, 0);	    // put Z going up
     glRotatef (90,  0, 0, 1);	    // put Z going up
@@ -534,9 +516,9 @@ float temp = NEARCLIP;
 	//
 	// set drawing parms
 	//
-//	if (gl_cull.value)
-	//	glEnable(GL_CULL_FACE);
-//	else
+	if (gl_cull.value)
+		glEnable(GL_CULL_FACE);
+	else
 		glDisable(GL_CULL_FACE);
 
 	glDisable(GL_BLEND);
