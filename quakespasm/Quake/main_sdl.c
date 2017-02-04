@@ -54,6 +54,54 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #endif
 
+#include <openhmd/openhmd.h>
+
+ohmd_context* g_hmdContext = NULL;
+ohmd_device* g_hmdDevice = NULL;
+
+static void Sys_InitHMD (void) 
+{
+	g_hmdContext = ohmd_ctx_create();
+	unsigned int num_devices = ohmd_ctx_probe(g_hmdContext);
+	if(num_devices < 0)
+	{
+		Sys_Printf("failed to probe devices: %s\n", ohmd_ctx_get_error(g_hmdContext));
+		return;
+	}
+
+	Sys_Printf("num devices: %d\n", num_devices);
+
+	for(unsigned int i = 0; i < num_devices; i++)
+	{
+		Sys_Printf("vendor: %s\n", ohmd_list_gets(g_hmdContext, i, OHMD_VENDOR));
+		Sys_Printf("product: %s\n", ohmd_list_gets(g_hmdContext, i, OHMD_PRODUCT));
+		Sys_Printf("path: %s\n", ohmd_list_gets(g_hmdContext, i, OHMD_PATH));
+	}
+
+	g_hmdDevice = ohmd_list_open_device(g_hmdContext, 0);
+
+	int ival = 0;
+	float fval = 0;
+	ohmd_device_geti(g_hmdDevice, OHMD_SCREEN_HORIZONTAL_RESOLUTION, &ival);
+	Sys_Printf("hres: %i\n", ival);
+	ohmd_device_geti(g_hmdDevice, OHMD_SCREEN_VERTICAL_RESOLUTION, &ival);
+	Sys_Printf("vres: %i\n", ival);
+
+	ohmd_device_getf(g_hmdDevice, OHMD_SCREEN_HORIZONTAL_SIZE, &fval);
+	Sys_Printf("hsize: %f\n", fval);
+	ohmd_device_getf(g_hmdDevice, OHMD_SCREEN_VERTICAL_SIZE, &fval);
+	Sys_Printf("vsize: %f\n", fval);
+
+	ohmd_device_getf(g_hmdDevice, OHMD_LENS_HORIZONTAL_SEPARATION, &fval);
+	Sys_Printf("lens seperation: %f\n", fval);
+	ohmd_device_getf(g_hmdDevice, OHMD_LENS_VERTICAL_POSITION, &fval);
+	Sys_Printf("lens vcenter: %f\n", fval);
+	ohmd_device_getf(g_hmdDevice, OHMD_LEFT_EYE_FOV, &fval);
+	Sys_Printf("fov: %f\n", fval);
+	ohmd_device_getf(g_hmdDevice, OHMD_LEFT_EYE_ASPECT_RATIO, &fval);
+	Sys_Printf("aspect: %f\n", fval);
+}
+
 static void Sys_AtExit (void)
 {
 	SDL_Quit();
@@ -113,7 +161,7 @@ int main(int argc, char *argv[])
 	isDedicated = (COM_CheckParm("-dedicated") != 0);
 
 	Sys_InitSDL ();
-
+	Sys_InitHMD ();
 	Sys_Init();
 
 	parms.memsize = DEFAULT_MEMORY;
@@ -186,6 +234,9 @@ int main(int argc, char *argv[])
 
 		oldtime = newtime;
 	}
+
+	if (g_hmdContext)
+    ohmd_ctx_destroy(g_hmdContext);
 
 	return 0;
 }

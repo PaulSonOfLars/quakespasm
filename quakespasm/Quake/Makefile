@@ -183,7 +183,7 @@ endif
 
 COMMON_LIBS:= -lm -lGL
 
-LIBS := $(COMMON_LIBS) $(NET_LIBS) $(CODECLIBS)
+LIBS := $(COMMON_LIBS) $(NET_LIBS) $(CODECLIBS) -lopenhmd
 
 # ---------------------------
 # targets

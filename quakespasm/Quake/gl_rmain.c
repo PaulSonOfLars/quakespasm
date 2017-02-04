@@ -472,12 +472,14 @@ R_SetupGL
 */
 void R_SetupGL (void)
 {
+	int halfWidth = r_refdef.vrect.width / 2;
+
 	//johnfitz -- rewrote this section
 	glMatrixMode(GL_PROJECTION);
     glLoadIdentity ();
 	glViewport (glx + r_refdef.vrect.x,
 				gly + glheight - r_refdef.vrect.y - r_refdef.vrect.height,
-				r_refdef.vrect.width,
+				halfWidth,
 				r_refdef.vrect.height);
 	//johnfitz
 
