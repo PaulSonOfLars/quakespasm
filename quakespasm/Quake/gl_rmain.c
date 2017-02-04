@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // r_main.c
 
 #include "quakedef.h"
+#include <openhmd/openhmd.h>
 
 qboolean	r_cache_thrash;		// compatability
 
@@ -56,6 +57,9 @@ refdef_t	r_refdef;
 mleaf_t		*r_viewleaf, *r_oldviewleaf;
 
 int		d_lightstylevalue[256];	// 8.8 fraction of base light value
+
+extern ohmd_context* g_hmdContext;
+extern ohmd_device* g_hmdDevice;
 
 
 cvar_t	r_norefresh = {"r_norefresh","0",CVAR_NONE};
@@ -268,7 +272,7 @@ Returns true if the box is completely outside the frustum
 */
 qboolean R_CullBox (vec3_t emins, vec3_t emaxs)
 {
-	int i;
+/*	int i;
 	mplane_t *p;
 	for (i = 0;i < 4;i++)
 	{
@@ -309,7 +313,7 @@ qboolean R_CullBox (vec3_t emins, vec3_t emaxs)
 				return true;
 			break;
 		}
-	}
+	}*/
 	return false;
 }
 /*
@@ -470,9 +474,17 @@ void GL_SetFrustum(float fovx, float fovy)
 R_SetupGL
 =============
 */
-void R_SetupGL (void)
+void R_SetupGL (qboolean bLeft)
 {
+	ohmd_ctx_update(g_hmdContext);
+
 	int halfWidth = r_refdef.vrect.width / 2;
+
+	int oldGlx = glx;
+
+	if(!bLeft) {
+		glx += halfWidth;
+	}
 
 	//johnfitz -- rewrote this section
 	glMatrixMode(GL_PROJECTION);
@@ -481,9 +493,31 @@ void R_SetupGL (void)
 				gly + glheight - r_refdef.vrect.y - r_refdef.vrect.height,
 				halfWidth,
 				r_refdef.vrect.height);
+
+	glx = oldGlx;
 	//johnfitz
 
     GL_SetFrustum (r_fovx, r_fovy); //johnfitz -- use r_fov* vars
+
+		//const float temp = r_fovy;
+
+//		float fuck;
+	//	ohmd_device_getf(g_hmdDevice, OHMD_PROJECTION_ZFAR, &fuck);
+//		Sys_Printf("FUCK: %f %f ", fuck, r_fovx);
+
+	//	ohmd_device_setf(g_hmdDevice, OHMD_LEFT_EYE_FOV, &r_fovy);
+float temp = NEARCLIP;
+		ohmd_device_setf(g_hmdDevice, OHMD_PROJECTION_ZNEAR, &temp);
+		ohmd_device_setf(g_hmdDevice, OHMD_PROJECTION_ZFAR, &gl_farclip.value);
+	//	ohmd_device_setf(g_hmdDevice, OHMD_LEFT_EYE_ASPECT_RATIO, )
+
+		    float projm[16];
+    ohmd_device_getf(g_hmdDevice, bLeft? OHMD_LEFT_EYE_GL_PROJECTION_MATRIX:
+		OHMD_RIGHT_EYE_GL_PROJECTION_MATRIX, projm);
+
+		
+
+	//	glLoadMatrixf(projm);
 
 //	glCullFace(GL_BACK); //johnfitz -- glquake used CCW with backwards culling -- let's do it right
 
@@ -500,9 +534,9 @@ void R_SetupGL (void)
 	//
 	// set drawing parms
 	//
-	if (gl_cull.value)
-		glEnable(GL_CULL_FACE);
-	else
+//	if (gl_cull.value)
+	//	glEnable(GL_CULL_FACE);
+//	else
 		glDisable(GL_CULL_FACE);
 
 	glDisable(GL_BLEND);
@@ -533,12 +567,12 @@ void R_Clear (void)
 R_SetupScene -- johnfitz -- this is the stuff that needs to be done once per eye in stereo mode
 ===============
 */
-void R_SetupScene (void)
+void R_SetupScene (qboolean bLeft)
 {
 	R_PushDlights ();
 	R_AnimateLight ();
 	r_framecount++;
-	R_SetupGL ();
+	R_SetupGL (bLeft);
 }
 
 /*
@@ -905,9 +939,9 @@ void R_DrawShadows (void)
 R_RenderScene
 ================
 */
-void R_RenderScene (void)
+void R_RenderScene (qboolean bLeft)
 {
-	R_SetupScene (); //johnfitz -- this does everything that should be done once per call to RenderScene
+	R_SetupScene (bLeft); //johnfitz -- this does everything that should be done once per call to RenderScene
 
 	Fog_EnableGFog (); //johnfitz
 
@@ -977,30 +1011,33 @@ void R_RenderView (void)
 		AngleVectors (r_refdef.viewangles, vpn, vright, vup);
 
 		//render left eye (red)
-		glColorMask(1, 0, 0, 1);
+		//glColorMask(1, 0, 0, 1);
 		VectorMA (r_refdef.vieworg, -0.5f * eyesep, vright, r_refdef.vieworg);
 		frustum_skew = 0.5 * eyesep * NEARCLIP / fdepth;
 		srand((int) (cl.time * 1000)); //sync random stuff between eyes
 
-		R_RenderScene ();
+		R_RenderScene (true);
 
 		//render right eye (cyan)
 		glClear (GL_DEPTH_BUFFER_BIT);
-		glColorMask(0, 1, 1, 1);
+	//	glColorMask(0, 1, 1, 1);
 		VectorMA (r_refdef.vieworg, 1.0f * eyesep, vright, r_refdef.vieworg);
 		frustum_skew = -frustum_skew;
 		srand((int) (cl.time * 1000)); //sync random stuff between eyes
 
-		R_RenderScene ();
+		R_RenderScene (false);
 
 		//restore
-		glColorMask(1, 1, 1, 1);
+	//	glColorMask(1, 1, 1, 1);
 		VectorMA (r_refdef.vieworg, -0.5f * eyesep, vright, r_refdef.vieworg);
 		frustum_skew = 0.0f;
 	}
 	else
 	{
-		R_RenderScene ();
+		glClear (GL_DEPTH_BUFFER_BIT);
+		R_RenderScene (true);
+		glClear (GL_DEPTH_BUFFER_BIT);
+		R_RenderScene (false);
 	}
 	//johnfitz
 
