@@ -79,7 +79,7 @@ static int buttonremap[] =
 };
 
 /* total accumulated mouse movement since last frame */
-static int	total_dx, total_dy = 0;
+int	total_dx, total_dy = 0;
 
 static int SDLCALL IN_FilterMouseEvents (const SDL_Event *event)
 {
@@ -638,6 +638,8 @@ void IN_Commands (void)
 IN_JoyMove
 ================
 */
+float joydelta = 0;
+
 void IN_JoyMove (usercmd_t *cmd)
 {
 #if defined(USE_SDL2)
@@ -677,6 +679,7 @@ void IN_JoyMove (usercmd_t *cmd)
 	cmd->sidemove += (cl_sidespeed.value * speed * moveEased.x);
 	cmd->forwardmove -= (cl_forwardspeed.value * speed * moveEased.y);
 
+	joydelta += lookEased.x * joy_sensitivity_yaw.value * host_frametime;
 	cl.viewangles[YAW] -= lookEased.x * joy_sensitivity_yaw.value * host_frametime;
 	cl.viewangles[PITCH] += lookEased.y * joy_sensitivity_pitch.value * (joy_invert.value ? -1.0 : 1.0) * host_frametime;
 
@@ -698,9 +701,6 @@ void IN_MouseMove(usercmd_t *cmd)
 	dmx = total_dx * sensitivity.value;
 	dmy = total_dy * sensitivity.value;
 
-	total_dx = 0;
-	total_dy = 0;
-
 	if ( (in_strafe.state & 1) || (lookstrafe.value && (in_mlook.state & 1) ))
 		cmd->sidemove += m_side.value * dmx;
 	else
@@ -714,12 +714,12 @@ void IN_MouseMove(usercmd_t *cmd)
 
 	if ( (in_mlook.state & 1) && !(in_strafe.state & 1))
 	{
-		cl.viewangles[PITCH] += m_pitch.value * dmy;
+	/*	cl.viewangles[PITCH] += m_pitch.value * dmy;*/
 		/* johnfitz -- variable pitch clamping */
-		if (cl.viewangles[PITCH] > cl_maxpitch.value)
+		/*if (cl.viewangles[PITCH] > cl_maxpitch.value)
 			cl.viewangles[PITCH] = cl_maxpitch.value;
 		if (cl.viewangles[PITCH] < cl_minpitch.value)
-			cl.viewangles[PITCH] = cl_minpitch.value;
+			cl.viewangles[PITCH] = cl_minpitch.value;*/
 	}
 	else
 	{
@@ -836,7 +836,7 @@ static inline int IN_SDL_KeysymToQuakeKey(SDLKey sym)
 	case SDLK_BREAK: return K_PAUSE;
 	case SDLK_PAUSE: return K_PAUSE;
 
-	case SDLK_WORLD_18: return '~'; // the '²' key
+	case SDLK_WORLD_18: return '~'; // the 'ï¿½' key
 
 	default: return 0;
 	}

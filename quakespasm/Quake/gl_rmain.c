@@ -22,6 +22,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // r_main.c
 
 #include "quakedef.h"
+#include <openhmd/openhmd.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_opengl.h>
+
 
 qboolean	r_cache_thrash;		// compatability
 
@@ -56,6 +60,9 @@ refdef_t	r_refdef;
 mleaf_t		*r_viewleaf, *r_oldviewleaf;
 
 int		d_lightstylevalue[256];	// 8.8 fraction of base light value
+
+extern ohmd_context* g_hmdContext;
+extern ohmd_device* g_hmdDevice;
 
 
 cvar_t	r_norefresh = {"r_norefresh","0",CVAR_NONE};
@@ -185,6 +192,7 @@ GLSLGamma_GammaCorrect
 */
 void GLSLGamma_GammaCorrect (void)
 {
+	return;
 	float smax, tmax;
 
 	if (!gl_glsl_gamma_able)
@@ -470,18 +478,45 @@ void GL_SetFrustum(float fovx, float fovy)
 R_SetupGL
 =============
 */
-void R_SetupGL (void)
+extern GLuint g_fboLeft;
+extern cvar_t vid_width;
+extern cvar_t vid_height;
+void R_SetupGL (qboolean bLeft)
 {
-	int halfWidth = r_refdef.vrect.width / 2;
+	if (bLeft) {
+		glBindFramebuffer(GL_FRAMEBUFFER, g_fboLeft);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	}
+
+	ohmd_ctx_update(g_hmdContext);
+
+	int halfWidth = vid_width.value / 2;
 
 	//johnfitz -- rewrote this section
 	glMatrixMode(GL_PROJECTION);
     glLoadIdentity ();
+
+//	if (bLeft) {
+//		glViewport (0, 0, halfWidth, vid_height.value);
+//	} else {
+//		glViewport (halfWidth, 0, halfWidth, vid_height.value);
+//	}*/
+
+	int oldGlx = glx;
+	if(!bLeft)
+		glx += halfWidth;
+
 	glViewport (glx + r_refdef.vrect.x,
 				gly + glheight - r_refdef.vrect.y - r_refdef.vrect.height,
 				halfWidth,
 				r_refdef.vrect.height);
+
+	glx = oldGlx;
 	//johnfitz
+
+	float eye_gap = 0.035;
+	ohmd_device_setf(g_hmdDevice, OHMD_EYE_IPD , &eye_gap);
+
 
     GL_SetFrustum (r_fovx, r_fovy); //johnfitz -- use r_fov* vars
 
@@ -489,6 +524,8 @@ void R_SetupGL (void)
 
 	glMatrixMode(GL_MODELVIEW);
     glLoadIdentity ();
+
+//		Con_Printf ("Quake %f %f %f\n", r_refdef.viewangles[0], r_refdef.viewangles[1], r_refdef.viewangles[2]);
 
     glRotatef (-90,  1, 0, 0);	    // put Z going up
     glRotatef (90,  0, 0, 1);	    // put Z going up
@@ -525,7 +562,7 @@ void R_Clear (void)
 		clearbits |= GL_STENCIL_BUFFER_BIT;
 	if (gl_clear.value)
 		clearbits |= GL_COLOR_BUFFER_BIT;
-	glClear (clearbits);
+	//glClear (clearbits);
 }
 
 /*
@@ -533,12 +570,12 @@ void R_Clear (void)
 R_SetupScene -- johnfitz -- this is the stuff that needs to be done once per eye in stereo mode
 ===============
 */
-void R_SetupScene (void)
+void R_SetupScene (qboolean bLeft)
 {
 	R_PushDlights ();
 	R_AnimateLight ();
 	r_framecount++;
-	R_SetupGL ();
+	R_SetupGL (bLeft);
 }
 
 /*
@@ -905,9 +942,18 @@ void R_DrawShadows (void)
 R_RenderScene
 ================
 */
-void R_RenderScene (void)
+extern GLuint g_texLeft;
+extern GLuint g_texRight;
+extern GLuint r_vr_program;
+extern GLint r_vr_program_vbotex;
+extern GLint r_vr_lenscenter;
+extern GLint r_vr_scrcenter;
+extern cvar_t vid_width;
+extern cvar_t vid_height;
+
+void R_RenderScene (qboolean bLeft)
 {
-	R_SetupScene (); //johnfitz -- this does everything that should be done once per call to RenderScene
+	R_SetupScene (bLeft); //johnfitz -- this does everything that should be done once per call to RenderScene
 
 	Fog_EnableGFog (); //johnfitz
 
@@ -936,6 +982,54 @@ void R_RenderScene (void)
 	R_ShowTris (); //johnfitz
 
 	R_ShowBoundingBoxes (); //johnfitz
+	
+	if (!bLeft) {
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+		int width = vid_width.value;
+		int height = vid_height.value;
+
+		glViewport(0, 0, width, height);
+
+	 	glMatrixMode(GL_PROJECTION);
+		glLoadIdentity();
+		glOrtho(0.0, width, 0.0, height, -1.0, 1.0);
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+		glMatrixMode(GL_TEXTURE);
+		glLoadIdentity();
+
+		GL_UseProgramFunc(r_vr_program);
+
+		GL_Uniform2fFunc(r_vr_lenscenter, 0.25, 0.5);
+		GL_Uniform2fFunc(r_vr_scrcenter, 0.25, 0.5);
+	/*	glUniform2fv(r_vr_scrcenter,
+		1, out2);*/
+
+		glActiveTexture(GL_TEXTURE0);
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, g_texLeft);
+		glBegin(GL_QUADS);
+		glMultiTexCoord2f(GL_TEXTURE0, 0, 0); glVertex3f(0, 0, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 0, 1); glVertex3f(0, height, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 0.5, 1); glVertex3f(width/2, height, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 0.5, 0); glVertex3f(width/2, 0, 0);
+		glEnd();
+
+
+
+		GL_Uniform2fFunc(r_vr_lenscenter, 0.75, 0.5);
+		GL_Uniform2fFunc(r_vr_scrcenter, 0.75, 0.5);
+
+		glBegin(GL_QUADS);
+		glMultiTexCoord2f(GL_TEXTURE0, 0.5, 0); glVertex3f(width/2, 0, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 0.5, 1); glVertex3f(width/2, height, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 1, 1); glVertex3f(width, height, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 1, 0); glVertex3f(width, 0, 0);
+		glEnd();
+
+		GL_UseProgramFunc(0);
+	} 
 }
 
 /*
@@ -971,36 +1065,39 @@ void R_RenderView (void)
 	//johnfitz -- stereo rendering -- full of hacky goodness
 	if (r_stereo.value)
 	{
-		float eyesep = CLAMP(-8.0f, r_stereo.value, 8.0f);
+	/*	float eyesep = CLAMP(-8.0f, r_stereo.value, 8.0f);
 		float fdepth = CLAMP(32.0f, r_stereodepth.value, 1024.0f);
 
 		AngleVectors (r_refdef.viewangles, vpn, vright, vup);
 
 		//render left eye (red)
-		glColorMask(1, 0, 0, 1);
+		//glColorMask(1, 0, 0, 1);
 		VectorMA (r_refdef.vieworg, -0.5f * eyesep, vright, r_refdef.vieworg);
 		frustum_skew = 0.5 * eyesep * NEARCLIP / fdepth;
 		srand((int) (cl.time * 1000)); //sync random stuff between eyes
 
-		R_RenderScene ();
+		R_RenderScene (true);
 
 		//render right eye (cyan)
 		glClear (GL_DEPTH_BUFFER_BIT);
-		glColorMask(0, 1, 1, 1);
+	//	glColorMask(0, 1, 1, 1);
 		VectorMA (r_refdef.vieworg, 1.0f * eyesep, vright, r_refdef.vieworg);
 		frustum_skew = -frustum_skew;
 		srand((int) (cl.time * 1000)); //sync random stuff between eyes
 
-		R_RenderScene ();
+		R_RenderScene (false);
 
 		//restore
-		glColorMask(1, 1, 1, 1);
+	//	glColorMask(1, 1, 1, 1);
 		VectorMA (r_refdef.vieworg, -0.5f * eyesep, vright, r_refdef.vieworg);
-		frustum_skew = 0.0f;
+		frustum_skew = 0.0f;*/
 	}
 	else
 	{
-		R_RenderScene ();
+	//	glClear (GL_DEPTH_BUFFER_BIT);
+		R_RenderScene (true);
+	//	glClear (GL_DEPTH_BUFFER_BIT);
+		R_RenderScene (false);
 	}
 	//johnfitz
 
