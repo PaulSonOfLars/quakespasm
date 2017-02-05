@@ -497,6 +497,10 @@ void R_SetupGL (qboolean bLeft)
 	glx = oldGlx;
 	//johnfitz
 
+	float eye_gap = 0.035;
+	ohmd_device_setf(g_hmdDevice, OHMD_EYE_IPD , &eye_gap);
+
+
     GL_SetFrustum (r_fovx, r_fovy); //johnfitz -- use r_fov* vars
 
 //	glCullFace(GL_BACK); //johnfitz -- glquake used CCW with backwards culling -- let's do it right

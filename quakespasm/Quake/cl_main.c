@@ -704,6 +704,15 @@ double rad2deg(double rad)
 CL_SendCmd
 =================
 */
+extern int total_dx;
+extern int total_dy;
+float endmove_angles[3];
+float startmove_angles[3];
+int previous_dx = 0;
+int previous_dy = 0;
+int smooth_counter = 0;
+extern float joydelta;
+
 void CL_SendCmd (void)
 {
 	usercmd_t		cmd;
@@ -711,29 +720,8 @@ void CL_SendCmd (void)
 	if (cls.state != ca_connected)
 		return;
 
-		float qu[4];
-    ohmd_ctx_update(g_hmdContext);
-    ohmd_device_getf(g_hmdDevice, OHMD_ROTATION_QUAT, qu);
 
-	float temp = qu[0];
-		qu[0] = qu[3];
-		qu[3] = temp;
-
-		float euler[3];
-
-		toEulerianAngle(qu, &euler[ROLL], 
-		&euler[PITCH], &euler[YAW]);
-
-		euler[0] = rad2deg(euler[0]);
-		euler[1] = rad2deg(euler[1]);
-		euler[2] = rad2deg(euler[2]);
-
-		cl.viewangles[0] = -euler[2];
-		cl.viewangles[1] = euler[1] + 90;
-		cl.viewangles[2] = -euler[0];
-
-
-		Con_Printf("%.2f %.2f %.2f\n", cl.viewangles[0], cl.viewangles[1], cl.viewangles[2]);
+//		Con_Printf("%.2f %.2f %.2f\n", cl.viewangles[0], cl.viewangles[1], cl.viewangles[2]);
 
 		/*		if (cl.viewangles[PITCH] > cl_maxpitch.value)
 			cl.viewangles[PITCH] = cl_maxpitch.value;
@@ -742,14 +730,105 @@ void CL_SendCmd (void)
 */
 //			V_StopPitchDrift ();
 
+
 	if (cls.signon == SIGNONS)
 	{
 	// get basic movement from keyboard
 		CL_BaseMove (&cmd);
 
+	/*if (!total_dx && !total_dy) {
+		cl.viewangles[0] = 0;
+		cl.viewangles[1] = 0;
+		cl.viewangles[2] = 0;
+	} */
+
+	qboolean bStopped = false;
+	qboolean bStarted = false;
+
+		if ( (previous_dx != 0 || previous_dy != 0) &&
+			(total_dx == 0 && total_dy == 0) ) {
+				bStopped = true;
+				
+			}
+
+		if ( (previous_dx == 0 && previous_dy == 0) &&
+		(total_dx != 0 || total_dy != 0)) {
+				bStarted = true;
+			}
+
+							float qu[4];
+    ohmd_ctx_update(g_hmdContext);
+    ohmd_device_getf(g_hmdDevice, OHMD_ROTATION_QUAT, qu);
+
+		float temp = qu[0];
+		qu[0] = qu[3];
+		qu[3] = temp;
+
+		float euler[3];
+
+				toEulerianAngle(qu, &euler[ROLL], 
+		&euler[PITCH], &euler[YAW]);
+
+		euler[0] = rad2deg(euler[0]);
+		euler[1] = rad2deg(euler[1]);
+		euler[2] = rad2deg(euler[2]);
+
+			cl.viewangles[1] = euler[1] + 90 - joydelta;
+
+	/*	if (total_dx || total_dy) {
+			Con_Printf ("There is mouse mov\n");
+	
+			previous_dx = total_dx;
+			previous_dy = total_dy;
+
+			if (bStarted) {
+				Con_Printf ("Started mouse mov\n");
+				startmove_angles[0] = cl.viewangles[0]   ;
+				startmove_angles[1] = cl.viewangles[1]  ;
+				startmove_angles[2] = cl.viewangles[2]  ;
+			}
+		} else {
+			previous_dx = 0;
+			previous_dy = 0;
+
+			smooth_counter++;
+
+			if (bStopped && smooth_counter >= 5) {
+
+				Con_Printf ("Stopped mouse mov\n");
+				endmove_angles[0] = cl.viewangles[0]   ;
+				endmove_angles[1] = cl.viewangles[1]  ;
+				endmove_angles[2] = cl.viewangles[2]  ;
+				smooth_counter = 0;
+			}
+
+		//	if (smooth_counter >=5) {
+		//		smooth_counter = 0;
+		//	}
+		}*/
+
+
 	// allow mice or other external controllers to add to the move
 		IN_Move (&cmd);
+		
+//		if ( (total_dx == 0 || total_dy == 0) ) {
+			cl.viewangles[0] = -euler[2]; // + endmove_angles[0] - startmove_angles[0];
+		//	cl.viewangles[1] += euler[1] + 90;
+			if ( (total_dx != 0 || total_dy != 0) ) {
+				
+			} else {
+				//if (smooth_counter == 0) {
+			//		cl.viewangles[1] = euler[1] + 90 + endmove_angles[1] - startmove_angles[1] ;
+			//		smooth_counter = 0;
+			//	}
+			}
+			cl.viewangles[2] = -euler[0] ; //+ endmove_angles[2] - startmove_angles[2];
+	//	}
+	
+			total_dx = 0;
+		total_dy = 0;
 
+	//}
 	// send the unreliable message
 		CL_SendMove (&cmd);
 	}

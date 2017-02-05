@@ -41,6 +41,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <OpenGL/OpenGL.h>
 #endif
 
+#include <openhmd/openhmd.h>
+
+extern ohmd_context* g_hmdContext;
+extern ohmd_device* g_hmdDevice;
+
 #define MAX_MODE_LIST	600 //johnfitz -- was 30
 #define MAX_BPPS_LIST	5
 #define WARP_WIDTH		320
@@ -1537,6 +1542,7 @@ void	VID_Init (void)
 
 	putenv (vid_center);	/* SDL_putenv is problematic in versions <= 1.2.9 */
 
+
 	if (SDL_InitSubSystem(SDL_INIT_VIDEO) < 0)
 		Sys_Error("Couldn't init SDL video: %s", SDL_GetError());
 
@@ -1567,6 +1573,19 @@ void	VID_Init (void)
 		CFG_CloseConfig();
 	}
 	CFG_ReadCvarOverrides(read_vars, num_readvars);
+
+		int vr_width = 0;
+	int vr_height = 0;
+	ohmd_device_geti(g_hmdDevice, OHMD_SCREEN_HORIZONTAL_RESOLUTION, &vr_width);
+	ohmd_device_geti(g_hmdDevice, OHMD_SCREEN_VERTICAL_RESOLUTION, &vr_height);
+
+	vr_width -= 90;
+	vr_height -= 90;
+
+	Sys_Printf("*** %f %f *** \n ", vr_width, vr_height);
+		Cvar_SetValue("vid_width", vr_width);
+	Cvar_SetValue("vid_height", vr_height);
+
 
 	VID_InitModelist();
 
