@@ -23,6 +23,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 #include <openhmd/openhmd.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_opengl.h>
+
 
 qboolean	r_cache_thrash;		// compatability
 
@@ -189,6 +192,7 @@ GLSLGamma_GammaCorrect
 */
 void GLSLGamma_GammaCorrect (void)
 {
+	return;
 	float smax, tmax;
 
 	if (!gl_glsl_gamma_able)
@@ -272,7 +276,7 @@ Returns true if the box is completely outside the frustum
 */
 qboolean R_CullBox (vec3_t emins, vec3_t emaxs)
 {
-	/*int i;
+	int i;
 	mplane_t *p;
 	for (i = 0;i < 4;i++)
 	{
@@ -313,7 +317,7 @@ qboolean R_CullBox (vec3_t emins, vec3_t emaxs)
 				return true;
 			break;
 		}
-	}*/
+	}
 	return false;
 }
 /*
@@ -474,21 +478,34 @@ void GL_SetFrustum(float fovx, float fovy)
 R_SetupGL
 =============
 */
+extern GLuint g_fboLeft;
+extern cvar_t vid_width;
+extern cvar_t vid_height;
 void R_SetupGL (qboolean bLeft)
 {
+	if (bLeft) {
+		glBindFramebuffer(GL_FRAMEBUFFER, g_fboLeft);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	}
+
 	ohmd_ctx_update(g_hmdContext);
 
-	int halfWidth = r_refdef.vrect.width / 2;
-
-	int oldGlx = glx;
-
-	if(!bLeft) {
-		glx += halfWidth;
-	}
+	int halfWidth = vid_width.value / 2;
 
 	//johnfitz -- rewrote this section
 	glMatrixMode(GL_PROJECTION);
     glLoadIdentity ();
+
+//	if (bLeft) {
+//		glViewport (0, 0, halfWidth, vid_height.value);
+//	} else {
+//		glViewport (halfWidth, 0, halfWidth, vid_height.value);
+//	}*/
+
+	int oldGlx = glx;
+	if(!bLeft)
+		glx += halfWidth;
+
 	glViewport (glx + r_refdef.vrect.x,
 				gly + glheight - r_refdef.vrect.y - r_refdef.vrect.height,
 				halfWidth,
@@ -545,7 +562,7 @@ void R_Clear (void)
 		clearbits |= GL_STENCIL_BUFFER_BIT;
 	if (gl_clear.value)
 		clearbits |= GL_COLOR_BUFFER_BIT;
-	glClear (clearbits);
+	//glClear (clearbits);
 }
 
 /*
@@ -925,6 +942,15 @@ void R_DrawShadows (void)
 R_RenderScene
 ================
 */
+extern GLuint g_texLeft;
+extern GLuint g_texRight;
+extern GLuint r_vr_program;
+extern GLint r_vr_program_vbotex;
+extern GLint r_vr_lenscenter;
+extern GLint r_vr_scrcenter;
+extern cvar_t vid_width;
+extern cvar_t vid_height;
+
 void R_RenderScene (qboolean bLeft)
 {
 	R_SetupScene (bLeft); //johnfitz -- this does everything that should be done once per call to RenderScene
@@ -956,6 +982,54 @@ void R_RenderScene (qboolean bLeft)
 	R_ShowTris (); //johnfitz
 
 	R_ShowBoundingBoxes (); //johnfitz
+	
+	if (!bLeft) {
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+		int width = vid_width.value;
+		int height = vid_height.value;
+
+		glViewport(0, 0, width, height);
+
+	 	glMatrixMode(GL_PROJECTION);
+		glLoadIdentity();
+		glOrtho(0.0, width, 0.0, height, -1.0, 1.0);
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+		glMatrixMode(GL_TEXTURE);
+		glLoadIdentity();
+
+		GL_UseProgramFunc(r_vr_program);
+
+		GL_Uniform2fFunc(r_vr_lenscenter, 0.25, 0.5);
+		GL_Uniform2fFunc(r_vr_scrcenter, 0.25, 0.5);
+	/*	glUniform2fv(r_vr_scrcenter,
+		1, out2);*/
+
+		glActiveTexture(GL_TEXTURE0);
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, g_texLeft);
+		glBegin(GL_QUADS);
+		glMultiTexCoord2f(GL_TEXTURE0, 0, 0); glVertex3f(0, 0, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 0, 1); glVertex3f(0, height, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 0.5, 1); glVertex3f(width/2, height, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 0.5, 0); glVertex3f(width/2, 0, 0);
+		glEnd();
+
+
+
+		GL_Uniform2fFunc(r_vr_lenscenter, 0.75, 0.5);
+		GL_Uniform2fFunc(r_vr_scrcenter, 0.75, 0.5);
+
+		glBegin(GL_QUADS);
+		glMultiTexCoord2f(GL_TEXTURE0, 0.5, 0); glVertex3f(width/2, 0, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 0.5, 1); glVertex3f(width/2, height, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 1, 1); glVertex3f(width, height, 0);
+		glMultiTexCoord2f(GL_TEXTURE0, 1, 0); glVertex3f(width, 0, 0);
+		glEnd();
+
+		GL_UseProgramFunc(0);
+	} 
 }
 
 /*
@@ -991,7 +1065,7 @@ void R_RenderView (void)
 	//johnfitz -- stereo rendering -- full of hacky goodness
 	if (r_stereo.value)
 	{
-		float eyesep = CLAMP(-8.0f, r_stereo.value, 8.0f);
+	/*	float eyesep = CLAMP(-8.0f, r_stereo.value, 8.0f);
 		float fdepth = CLAMP(32.0f, r_stereodepth.value, 1024.0f);
 
 		AngleVectors (r_refdef.viewangles, vpn, vright, vup);
@@ -1016,13 +1090,13 @@ void R_RenderView (void)
 		//restore
 	//	glColorMask(1, 1, 1, 1);
 		VectorMA (r_refdef.vieworg, -0.5f * eyesep, vright, r_refdef.vieworg);
-		frustum_skew = 0.0f;
+		frustum_skew = 0.0f;*/
 	}
 	else
 	{
-		glClear (GL_DEPTH_BUFFER_BIT);
+	//	glClear (GL_DEPTH_BUFFER_BIT);
 		R_RenderScene (true);
-		glClear (GL_DEPTH_BUFFER_BIT);
+	//	glClear (GL_DEPTH_BUFFER_BIT);
 		R_RenderScene (false);
 	}
 	//johnfitz

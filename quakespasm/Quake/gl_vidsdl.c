@@ -29,6 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #if defined(SDL_FRAMEWORK) || defined(NO_SDL_CONFIG)
 #if defined(USE_SDL2)
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_opengl.h>
 #else
 #include <SDL/SDL.h>
 #endif
@@ -140,6 +141,7 @@ QS_PFNGLENABLEVERTEXATTRIBARRAYPROC GL_EnableVertexAttribArrayFunc = NULL; //eri
 QS_PFNGLDISABLEVERTEXATTRIBARRAYPROC GL_DisableVertexAttribArrayFunc = NULL; //ericw
 QS_PFNGLGETUNIFORMLOCATIONPROC GL_GetUniformLocationFunc = NULL; //ericw
 QS_PFNGLUNIFORM1IPROC GL_Uniform1iFunc = NULL; //ericw
+QS_PFNGLUNIFORM2FPROC GL_Uniform2fFunc = NULL;
 QS_PFNGLUNIFORM1FPROC GL_Uniform1fFunc = NULL; //ericw
 QS_PFNGLUNIFORM3FPROC GL_Uniform3fFunc = NULL; //ericw
 QS_PFNGLUNIFORM4FPROC GL_Uniform4fFunc = NULL; //ericw
@@ -148,8 +150,8 @@ QS_PFNGLUNIFORM4FPROC GL_Uniform4fFunc = NULL; //ericw
 
 //johnfitz -- new cvars
 static cvar_t	vid_fullscreen = {"vid_fullscreen", "0", CVAR_ARCHIVE};	// QuakeSpasm, was "1"
-static cvar_t	vid_width = {"vid_width", "800", CVAR_ARCHIVE};		// QuakeSpasm, was 640
-static cvar_t	vid_height = {"vid_height", "600", CVAR_ARCHIVE};	// QuakeSpasm, was 480
+ cvar_t	vid_width = {"vid_width", "800", CVAR_ARCHIVE};		// QuakeSpasm, was 640
+ cvar_t	vid_height = {"vid_height", "600", CVAR_ARCHIVE};	// QuakeSpasm, was 480
 static cvar_t	vid_bpp = {"vid_bpp", "16", CVAR_ARCHIVE};
 static cvar_t	vid_vsync = {"vid_vsync", "0", CVAR_ARCHIVE};
 static cvar_t	vid_fsaa = {"vid_fsaa", "0", CVAR_ARCHIVE}; // QuakeSpasm
@@ -180,6 +182,11 @@ static unsigned short vid_sysgamma_blue[256];
 
 static qboolean	gammaworks = false;	// whether hw-gamma works
 static int fsaa;
+
+/* FBOs */
+GLuint g_fboLeft;
+GLuint g_texLeft;
+GLuint g_depthLeft;
 
 /*
 ================
@@ -1139,6 +1146,7 @@ static void GL_CheckExtensions (void)
 		GL_GetUniformLocationFunc = (QS_PFNGLGETUNIFORMLOCATIONPROC) SDL_GL_GetProcAddress("glGetUniformLocation");
 		GL_Uniform1iFunc = (QS_PFNGLUNIFORM1IPROC) SDL_GL_GetProcAddress("glUniform1i");
 		GL_Uniform1fFunc = (QS_PFNGLUNIFORM1FPROC) SDL_GL_GetProcAddress("glUniform1f");
+		GL_Uniform2fFunc = (QS_PFNGLUNIFORM2FPROC) SDL_GL_GetProcAddress("glUniform2f");
 		GL_Uniform3fFunc = (QS_PFNGLUNIFORM3FPROC) SDL_GL_GetProcAddress("glUniform3f");
 		GL_Uniform4fFunc = (QS_PFNGLUNIFORM4FPROC) SDL_GL_GetProcAddress("glUniform4f");
 
@@ -1236,6 +1244,110 @@ static void GL_SetupState (void)
 
 /*
 ===============
+GL_GenFBO
+===============
+*/
+static void GL_GenFbo (GLuint *fbo, GLuint *tex, GLuint *depth, int sizex, int sizey) 
+{
+	glGenFramebuffers(1, fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, *fbo);
+
+	glGenTextures(1, tex);
+	glActiveTexture(GL_TEXTURE0);
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, *tex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sizex, sizey, 0,GL_RGB, GL_UNSIGNED_BYTE, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+	glGenRenderbuffers(1, depth);
+	glBindRenderbuffer(GL_RENDERBUFFER, *depth);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, sizex, sizey);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, *depth);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+	glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, *tex, 0);
+
+	GLenum DrawBuffers[1] = {GL_COLOR_ATTACHMENT0};
+	glDrawBuffers(1, DrawBuffers);
+
+	if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		Sys_Printf ("*****\n **** Error creating FBO! **** \n*****\n");
+	} else {
+		Sys_Printf ("*****\n **** Created FBO ok! **** \n*****\n");
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+/*
+=============
+GLSL_VR_Shader
+=============
+*/
+GLuint r_vr_program;
+GLint r_vr_program_vbotex;
+GLint r_vr_lenscenter;
+GLint r_vr_scrcenter;
+static void GLSL_VR_Shader (void)
+{
+	const GLchar *vertSource = \
+		"#version 110\n"
+		"\n"
+		"void main(void) {\n"
+		"	gl_Position = ftransform();\n"
+		"	gl_TexCoord[0] = gl_MultiTexCoord0;\n"
+		"}\n";
+
+	const GLchar *fragSource = \
+"#version 120\n"
+"\n"
+"// Taken from mts3d forums, from user fredrik.\n"
+"\n"
+"uniform sampler2D fboTex;\n"
+"uniform vec2 lensCenter;\n"
+"uniform vec2 screenCenter;\n"
+"\n"
+"const vec2 LeftLensCenter = vec2(0.25, 0.5);\n"
+"const vec2 RightLensCenter = vec2(0.75, 0.5);\n"
+"const vec2 LeftScreenCenter = vec2(0.25, 0.5);\n"
+"const vec2 RightScreenCenter = vec2(0.75, 0.5);\n"
+"const vec2 Scale = vec2(0.1469278, 0.2350845);\n"
+"const vec2 ScaleIn = vec2(4, 2.5);\n"
+"const vec4 HmdWarpParam   = vec4(1, 0.2, 0.1, 0);\n"
+"const float aberr_r = 0.985;\n"
+"const float aberr_b = 1.015;\n"
+"\n"
+            "vec2 HmdWarp(vec2 texIn)\n" 
+            "{\n" 
+            "   vec2 theta = (texIn - lensCenter) * ScaleIn;\n"
+            "   float  rSq= theta.x * theta.x + theta.y * theta.y;\n"
+            "   vec2 theta1 = theta * (HmdWarpParam.x + HmdWarpParam.y * rSq + "
+            "           HmdWarpParam.z * rSq * rSq + HmdWarpParam.w * rSq * rSq * rSq);\n" 
+            "   return lensCenter + Scale * theta1;\n" 
+            "}\n" 
+            "\n" 
+            "\n" 
+            "\n" 
+            "void main()\n"
+            "{\n"
+            "   vec2 tc = HmdWarp(gl_TexCoord[0].st);\n" 
+            "   if (any(notEqual(clamp(tc, screenCenter-vec2(0.25,0.5), screenCenter+vec2(0.25, 0.5)) - tc, vec2(0.0, 0.0))))\n" 
+            "       gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n" 
+            "   else\n" 
+            "       gl_FragColor = texture2D(fboTex, tc);\n"
+            "}";
+
+	r_vr_program = GL_CreateProgram (vertSource, fragSource, 0, NULL);
+
+//	r_vr_program_vbotex = GL_GetUniformLocation (&r_vr_program, "fboTex");
+	r_vr_lenscenter = GL_GetUniformLocation (&r_vr_program, "lensCenter");
+	r_vr_scrcenter = GL_GetUniformLocation (&r_vr_program, "screenCenter");
+//	r_vr_program_viewportsize = GL_GetUniformLocation (&r_vr_program, "viewportSize");
+}
+
+/*
+===============
 GL_Init
 ===============
 */
@@ -1279,6 +1391,9 @@ static void GL_Init (void)
 		Cbuf_AddText ("gl_clear 1");
 	}
 	//johnfitz
+
+	GLSL_VR_Shader();
+	GL_GenFbo(&g_fboLeft, &g_texLeft, &g_depthLeft, vid_width.value, vid_height.value);
 
 	GLAlias_CreateShaders ();
 	GL_ClearBufferBindings ();	
@@ -1578,9 +1693,6 @@ void	VID_Init (void)
 	int vr_height = 0;
 	ohmd_device_geti(g_hmdDevice, OHMD_SCREEN_HORIZONTAL_RESOLUTION, &vr_width);
 	ohmd_device_geti(g_hmdDevice, OHMD_SCREEN_VERTICAL_RESOLUTION, &vr_height);
-
-	vr_width -= 90;
-	vr_height -= 90;
 
 	Sys_Printf("*** %f %f *** \n ", vr_width, vr_height);
 		Cvar_SetValue("vid_width", vr_width);
