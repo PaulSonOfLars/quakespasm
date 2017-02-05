@@ -1065,7 +1065,7 @@ void R_RenderView (void)
 	//johnfitz -- stereo rendering -- full of hacky goodness
 	if (r_stereo.value)
 	{
-	/*	float eyesep = CLAMP(-8.0f, r_stereo.value, 8.0f);
+		float eyesep = CLAMP(-8.0f, r_stereo.value, 8.0f);
 		float fdepth = CLAMP(32.0f, r_stereodepth.value, 1024.0f);
 
 		AngleVectors (r_refdef.viewangles, vpn, vright, vup);
@@ -1090,7 +1090,7 @@ void R_RenderView (void)
 		//restore
 	//	glColorMask(1, 1, 1, 1);
 		VectorMA (r_refdef.vieworg, -0.5f * eyesep, vright, r_refdef.vieworg);
-		frustum_skew = 0.0f;*/
+		frustum_skew = 0.0f;
 	}
 	else
 	{
