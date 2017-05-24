@@ -481,6 +481,7 @@ R_SetupGL
 extern GLuint g_fboLeft;
 extern cvar_t vid_width;
 extern cvar_t vid_height;
+extern cvar_t r_stereo;
 void R_SetupGL (qboolean bLeft)
 {
 	if (bLeft) {
@@ -514,8 +515,8 @@ void R_SetupGL (qboolean bLeft)
 	glx = oldGlx;
 	//johnfitz
 
-	float eye_gap = 0.035;
-	ohmd_device_setf(g_hmdDevice, OHMD_EYE_IPD , &eye_gap);
+	//float eye_gap = r_stereo.value / 100.0f;
+	//ohmd_device_setf(g_hmdDevice, OHMD_EYE_IPD , &eye_gap);
 
 
     GL_SetFrustum (r_fovx, r_fovy); //johnfitz -- use r_fov* vars
